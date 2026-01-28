@@ -1,0 +1,764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Virtual Tour</title>
+  <link rel="stylesheet" href="pannellum/pannellum.css"/>
+  <style>
+    /* CSS Reset & Base Styles */
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+    
+    body, html { 
+      margin: 0; 
+      padding: 0;
+      height: 100%; 
+      width: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+    }
+    
+    .tour-container {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      display: flex; /* Ensures sidebar/panorama layout on desktop */
+    }
+    
+    #panorama {
+      flex: 1;
+      height: 100%;
+      background: #000;
+    }
+    
+    /* Compact Mobile Toggle */
+    .menu-toggle {
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      width: 2.75rem;
+      height: 2.75rem;
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 0.4rem;
+      font-size: 1.25rem;
+      cursor: pointer;
+      z-index: 1002;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s;
+    }
+    
+    /* Compact Sidebar */
+    .scene-menu {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 80%;
+      max-width: 17rem; /* Narrower sidebar */
+      height: 100%;
+      background: rgba(15, 15, 15, 0.98);
+      color: white;
+      transform: translateX(-100%);
+      transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 1001;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0.25rem 0 1rem rgba(0, 0, 0, 0.5);
+    }
+    
+    .scene-menu.open {
+      transform: translateX(0);
+    }
+    
+    /* Compact Menu Header */
+    .menu-header {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    
+    .menu-title {
+      font-size: 1.05rem;
+      font-weight: 600;
+      margin: 0;
+      color: rgba(255, 255, 255, 0.9);
+    }
+    
+    .scene-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      overflow-y: auto;
+      flex: 1;
+    }
+    
+    /* Compact Scene Items */
+    .scene-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.35rem 0.8rem; /* Tight vertical spacing */
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.15s;
+      min-height: 2.8rem;
+    }
+    
+    .scene-item:hover {
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .scene-item.active {
+      background: rgba(76, 175, 80, 0.15);
+      border-left-color: #4CAF50;
+    }
+    
+    /* Smaller Icons */
+    .scene-icon {
+      width: 2.1rem;
+      height: 2.1rem;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 0.3rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      color: #ccc;
+    }
+    
+    .scene-item.active .scene-icon {
+      background: #4CAF50;
+      color: white;
+    }
+    
+    .scene-name {
+      display: block;
+      font-size: 0.88rem; /* Compact text */
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    
+    .scene-id {
+      display: block;
+      font-size: 0.72rem; /* Subtext size */
+      color: rgba(255, 255, 255, 0.5);
+    }
+    
+    /* Desktop Responsiveness */
+    @media (min-width: 48rem) {
+      .menu-toggle, .menu-overlay { display: none; }
+      
+      .scene-menu {
+        position: static;
+        transform: translateX(0);
+        width: 16rem;
+        box-shadow: none;
+        border-right: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      
+      .scene-menu.collapsed {
+        width: 3.8rem;
+      }
+      
+      .scene-menu.collapsed .menu-title,
+      .scene-menu.collapsed .scene-info {
+        display: none;
+      }
+      
+      .scene-menu.collapsed .scene-item {
+        justify-content: center;
+        padding: 0.4rem 0;
+      }
+    }
+    
+    /* Collapse Toggle Button */
+    .collapse-toggle {
+      background: transparent;
+      color: rgba(255, 255, 255, 0.5);
+      border: none;
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.3rem;
+    }
+    
+    .collapse-toggle:hover {
+      background: rgba(255, 255, 255, 0.1);
+      color: white;
+    }
+
+    /* Crosshair Styles (Utility) */
+    .crosshair-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 100;
+      display: none;
+    }
+    .crosshair-overlay.visible { display: block; }
+
+     .crosshair-overlay svg {
+      width: 100%;
+      height: 100%;
+    }
+    
+    
+    .crosshair-toggle {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      width: 2.5rem;
+      height: 2.5rem;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      border: none;
+      border-radius: 0.4rem;
+      cursor: pointer;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .crosshair-toggle.active { background: #4CAF50; }
+    
+    .menu-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(0,0,0,0.4);
+      visibility: hidden; opacity: 0;
+      transition: opacity 0.3s;
+      z-index: 1000;
+    }
+    .menu-overlay.visible { visibility: visible; opacity: 1; }
+    
+  </style>
+</head>
+<body>
+
+<div class="tour-container">
+  <button class="menu-toggle" id="menuToggle" aria-label="Toggle navigation menu" aria-expanded="false">
+    ☰
+  </button>
+  <div class="menu-overlay" id="menuOverlay"></div>
+  <nav class="scene-menu" id="sceneMenu" aria-label="Scene navigation">
+    <div class="menu-header">
+      <h1 class="menu-title">Tour Locations</h1>
+      <button class="collapse-toggle" id="collapseToggle" aria-label="Collapse menu">«</button>
+    </div>
+    <ul class="scene-list" id="sceneList" role="list">
+      
+    </ul>
+  </nav>
+  <div id="panorama" role="img" aria-label="360 degree panoramic view">
+    <div class="crosshair-overlay" id="crosshairOverlay">
+      <svg viewBox="0 0 1000 1000" preserveAspectRatio="none">
+        <line x1="500" y1="0" x2="500" y2="1000" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+        <line x1="0" y1="600" x2="1000" y2="600" stroke="rgba(255,255,255,0.5)" stroke-width="2"/>
+        <circle cx="500" cy="600" r="20" fill="none" stroke="rgba(255,255,255,0.6)" stroke-width="2"/>
+      </svg>
+    </div>
+  </div>
+</div>
+<button class="crosshair-toggle" id="crosshairToggle" aria-label="Toggle crosshair" aria-pressed="false">
+  ⊕
+</button>
+
+<script src="pannellum/pannellum.js"></script>
+<script>
+const sceneConfig = {
+  "bath1": {
+    "displayName": "Bath 1",
+    "shortName": "BA1",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bath1_2.jpg",
+    "includeInMenu": true
+  },
+  "bath2": {
+    "displayName": "Bath 2",
+    "shortName": "BA2",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bath2_2.jpg",
+    "includeInMenu": true
+  },
+  "bed2": {
+    "displayName": "Bed 2",
+    "shortName": "BR2",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bed2_2.jpg",
+    "includeInMenu": true
+  },
+  "bed4": {
+    "displayName": "Bed 4",
+    "shortName": "BR4",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bed4.jpg",
+    "includeInMenu": true
+  },
+  "hallway1": {
+    "displayName": "Hallway 1",
+    "shortName": "H1",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_hallway.jpg",
+    "includeInMenu": true
+  },
+  "hallway2": {
+    "displayName": "Hallway 2",
+    "shortName": "H2",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_hallway2.jpg",
+    "includeInMenu": true
+  },
+  "kitchen1": {
+    "displayName": "Kitchen 1",
+    "shortName": "K1",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_kitchen1.jpg",
+    "includeInMenu": true
+  },
+  "kitchen2": {
+    "displayName": "Kitchen 2",
+    "shortName": "K2",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_kitchen2.jpg",
+    "includeInMenu": true
+  },
+  "laundry": {
+    "displayName": "Laundry",
+    "shortName": "LDR",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_laundry.jpg",
+    "includeInMenu": true
+  },
+  "lounge1_kitchen1": {
+    "displayName": "Living Hub 1",
+    "shortName": "LH1",
+    "includeInMenu": false,
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge1_kitchen1.jpg"
+  },
+  "lounge1": {
+    "displayName": "Lounge 1",
+    "shortName": "L1",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge1.jpg",
+    "includeInMenu": true
+  },
+  "lounge2_kitchen2": {
+    "displayName": "Living Hub 2",
+    "shortName": "LH2",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge2_kitchen2_2.jpg"
+  },
+  "lounge2": {
+    "displayName": "Lounge 2",
+    "shortName": "L2",
+    "includeInMenu": true,
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge2_kitchen2.jpg"
+  },
+  "master": {
+    "displayName": "Master",
+    "shortName": "MBR",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_master.jpg",
+    "includeInMenu": true
+  },
+  "store": {
+    "displayName": "Store",
+    "shortName": "STR",
+    "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_store.jpg",
+    "includeInMenu": true
+  }
+};
+const viewer = pannellum.viewer('panorama', {
+    "default": {
+        "firstScene": "lounge2",
+        "sceneFadeDuration": 500,
+        "autoLoad": true
+    },
+    "scenes": {
+        "bath1": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bath1_2.jpg",
+            "yaw": 0,
+            "pitch": 0,
+            "hotSpots": []
+        },
+        "bath2": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bath2_2.jpg",
+            "yaw": 0,
+            "pitch": 0,
+            "hotSpots": []
+        },
+        "bed2": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bed2_2.jpg",
+            "yaw": -100,
+            "pitch": 0,
+            "hotSpots": []
+        },
+        "bed4": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_bed4.jpg",
+            "yaw": 0,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -30,
+                    "yaw": -160,
+                    "type": "scene",
+                    "text": "Lounge2",
+                    "sceneId": "lounge2"
+                }
+            ]
+        },
+        "hallway1": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_hallway.jpg",
+            "yaw": 0,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -20,
+                    "yaw": 0,
+                    "type": "scene",
+                    "text": "Hallway 2",
+                    "sceneId": "hallway2"
+                }
+            ]
+        },
+        "hallway2": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_hallway2.jpg",
+            "yaw": 90,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": 0,
+                    "yaw": 0,
+                    "type": "scene",
+                    "text": "Laundry",
+                    "sceneId": "laundry"
+                }
+            ]
+        },
+        "kitchen1": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_kitchen1.jpg",
+            "yaw": -90,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -30,
+                    "yaw": 90,
+                    "type": "scene",
+                    "text": "Living Hub 1",
+                    "sceneId": "lounge1_kitchen1"
+                }
+            ]
+        },
+        "kitchen2": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_kitchen2.jpg",
+            "yaw": 90,
+            "pitch": 0,
+            "hotSpots": []
+        },
+        "laundry": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_laundry.jpg",
+            "yaw": 0,
+            "pitch": 0,
+            "hotSpots": []
+        },
+        "lounge1_kitchen1": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge1_kitchen1.jpg",
+            "yaw": -90,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -30,
+                    "yaw": -90,
+                    "type": "scene",
+                    "text": "Kitchen 1",
+                    "sceneId": "kitchen1"
+                },
+                {
+                    "pitch": -30,
+                    "yaw": 0,
+                    "type": "scene",
+                    "text": "Hallway",
+                    "sceneId": "hallway2"
+                }
+            ]
+        },
+        "lounge1": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge1.jpg",
+            "yaw": 180,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -30,
+                    "yaw": -100,
+                    "type": "scene",
+                    "text": "Living Hub 1",
+                    "sceneId": "lounge1_kitchen1"
+                }
+            ]
+        },
+        "lounge2_kitchen2": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge2_kitchen2_2.jpg",
+            "yaw": 90,
+            "pitch": 0,
+            "hotSpots": []
+        },
+        "lounge2": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_lounge2_kitchen2.jpg",
+            "yaw": 90,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -30,
+                    "yaw": 50,
+                    "type": "scene",
+                    "text": "Hallway 1",
+                    "sceneId": "hallway1"
+                },
+                {
+                    "pitch": -10,
+                    "yaw": 90,
+                    "type": "scene",
+                    "text": "Kitchen 2",
+                    "sceneId": "kitchen2"
+                },
+                {
+                    "pitch": -20,
+                    "yaw": 112,
+                    "type": "scene",
+                    "text": "Bed 2",
+                    "sceneId": "bed2"
+                },
+                {
+                    "pitch": -30,
+                    "yaw": 140,
+                    "type": "scene",
+                    "text": "Store",
+                    "sceneId": "store"
+                },
+                {
+                    "pitch": -40,
+                    "yaw": 170,
+                    "type": "scene",
+                    "text": "Bed 4",
+                    "sceneId": "bed4"
+                },
+                {
+                    "pitch": -20,
+                    "yaw": 90,
+                    "type": "scene",
+                    "text": "Lliving Hub 2",
+                    "sceneId": "lounge2_kitchen2"
+                },
+                {
+                    "pitch": 0,
+                    "yaw": 190,
+                    "type": "info",
+                    "text": "Plan",
+                    "URL": "docs/guest_wing.pdf",
+                    "target": "_blank"
+                }
+            ]
+        },
+        "master": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_master.jpg",
+            "yaw": -90,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -30,
+                    "yaw": 60,
+                    "type": "scene",
+                    "text": "Laundry",
+                    "sceneId": "laundry"
+                }
+            ]
+        },
+        "store": {
+            "type": "equirectangular",
+            "panorama": "panos/20260118_pp_1_wongala_hastings_guest_suite_store.jpg",
+            "yaw": 180,
+            "pitch": 0,
+            "hotSpots": [
+                {
+                    "pitch": -30,
+                    "yaw": -20,
+                    "type": "scene",
+                    "text": "Lounge 2",
+                    "sceneId": "lounge2"
+                }
+            ]
+        }
+    }
+});
+const state = {
+  currentScene: 'lounge2',
+  menuOpen: false,
+  menuCollapsed: false,
+  isMobile: window.innerWidth < 768,
+  crosshairVisible: false
+};
+// DOM Elements
+    const elements = {
+    menuToggle: document.getElementById('menuToggle'),
+    sceneMenu: document.getElementById('sceneMenu'),
+    sceneList: document.getElementById('sceneList'),
+    menuOverlay: document.getElementById('menuOverlay'),
+    collapseToggle: document.getElementById('collapseToggle'),
+    crosshairToggle: document.getElementById('crosshairToggle'),
+    crosshairOverlay: document.getElementById('crosshairOverlay')
+    };
+
+    // Generate Scene List
+    function generateSceneList() {
+    const fragment = document.createDocumentFragment();
+    
+    Object.entries(sceneConfig).forEach(([id, config]) => {
+        const li = document.createElement('li');
+        li.className = 'scene-item';
+        li.setAttribute('data-scene-id', id);
+        li.setAttribute('data-name', config.displayName);
+        li.setAttribute('role', 'button');
+        li.setAttribute('tabindex', '0');
+        li.setAttribute('aria-label', 'Navigate to ' + config.displayName);
+        
+        if (id === state.currentScene) {
+        li.classList.add('active');
+        li.setAttribute('aria-current', 'true');
+        }
+        
+        li.innerHTML = '<div class="scene-icon" aria-hidden="true">' + config.shortName + '</div>' +
+                    '<div class="scene-info">' +
+                        '<span class="scene-name">' + config.displayName + '</span>' +
+                        '<span class="scene-id">' + id + '</span>' +
+                    '</div>';
+        
+        // Click handler
+        li.addEventListener('click', () => navigateToScene(id));
+        
+        // Keyboard handler
+        li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            navigateToScene(id);
+        }
+        });
+        
+        fragment.appendChild(li);
+    });
+    
+    elements.sceneList.appendChild(fragment);
+    }
+
+    // Navigate to Scene
+    function navigateToScene(sceneId) {
+    viewer.loadScene(sceneId);
+    updateActiveScene(sceneId);
+    
+    // Close mobile menu after navigation
+    if (state.isMobile && state.menuOpen) {
+        toggleMenu();
+    }
+    }
+
+    // Update Active Scene
+    function updateActiveScene(sceneId) {
+    state.currentScene = sceneId;
+    
+    elements.sceneList.querySelectorAll('.scene-item').forEach(item => {
+        const isActive = item.getAttribute('data-scene-id') === sceneId;
+        item.classList.toggle('active', isActive);
+        
+        if (isActive) {
+        item.setAttribute('aria-current', 'true');
+        } else {
+        item.removeAttribute('aria-current');
+        }
+    });
+    }
+
+    // Toggle Mobile Menu
+    function toggleMenu() {
+    state.menuOpen = !state.menuOpen;
+    elements.sceneMenu.classList.toggle('open', state.menuOpen);
+    elements.menuOverlay.classList.toggle('visible', state.menuOpen);
+    elements.menuToggle.setAttribute('aria-expanded', state.menuOpen);
+    }
+
+    // Toggle Desktop Collapse
+    function toggleCollapse() {
+    if (!state.isMobile) {
+        state.menuCollapsed = !state.menuCollapsed;
+        elements.sceneMenu.classList.toggle('collapsed', state.menuCollapsed);
+        elements.collapseToggle.textContent = state.menuCollapsed ? '»' : '«';
+        elements.collapseToggle.setAttribute('aria-label', 
+        state.menuCollapsed ? 'Expand menu' : 'Collapse menu'
+        );
+    }
+    }
+
+    // Toggle Crosshair Grid
+    function toggleCrosshair() {
+    state.crosshairVisible = !state.crosshairVisible;
+    elements.crosshairOverlay.classList.toggle('visible', state.crosshairVisible);
+    elements.crosshairToggle.classList.toggle('active', state.crosshairVisible);
+    elements.crosshairToggle.setAttribute('aria-pressed', state.crosshairVisible);
+    }
+
+    // Handle Window Resize
+    function handleResize() {
+    const wasMobile = state.isMobile;
+    state.isMobile = window.innerWidth < 768;
+    
+    // Transitioning from mobile to desktop
+    if (wasMobile && !state.isMobile) {
+        state.menuOpen = false;
+        elements.sceneMenu.classList.remove('open');
+        elements.menuOverlay.classList.remove('visible');
+    }
+    
+    // Transitioning from desktop to mobile
+    if (!wasMobile && state.isMobile) {
+        state.menuCollapsed = false;
+        elements.sceneMenu.classList.remove('collapsed');
+    }
+    }
+
+    // Event Listeners
+    elements.menuToggle.addEventListener('click', toggleMenu);
+    elements.menuOverlay.addEventListener('click', toggleMenu);
+    elements.collapseToggle.addEventListener('click', toggleCollapse);
+    elements.crosshairToggle.addEventListener('click', toggleCrosshair);
+
+    viewer.on('scenechange', (sceneId) => {
+    updateActiveScene(sceneId);
+    });
+
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(handleResize, 150);
+    });
+
+    // Initialize
+    generateSceneList();
+</script>
+</body>
+</html>
